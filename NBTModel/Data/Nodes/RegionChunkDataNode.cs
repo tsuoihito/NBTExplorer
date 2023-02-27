@@ -1,4 +1,7 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
+using System.Collections.Generic;
+using NBTModel.Interop;
 using Substrate.Core;
 using Substrate.Nbt;
 
@@ -114,6 +117,83 @@ namespace NBTExplorer.Model
             }
 
             return false;
+        }
+
+        public override bool CanCreateTag (TagType type)
+        {
+            return Enum.IsDefined(typeof(TagType), type) && type != TagType.TAG_END;
+        }
+
+        public override bool CanPasteIntoNode
+        {
+            get { return NbtClipboardController.ContainsData; }
+        }
+
+        public override bool CreateNode (TagType type)
+        {
+            if (!CanCreateTag(type))
+                return false;
+
+            if (FormRegistry.CreateNode != null) {
+                CreateTagFormData data = new CreateTagFormData() {
+                    TagType = type, HasName = true,
+                };
+                data.RestrictedNames.AddRange(_container.TagNamesInUse);
+
+                if (FormRegistry.CreateNode(data)) {
+                    AddTag(data.TagNode, data.TagName);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public override bool PasteNode ()
+        {
+            if (!CanPasteIntoNode)
+                return false;
+
+            NbtClipboardData clipboard = NbtClipboardController.CopyFromClipboard();
+            if (clipboard == null || clipboard.Node == null)
+                return false;
+
+            string name = clipboard.Name;
+            if (String.IsNullOrEmpty(name))
+                name = "UNNAMED";
+
+            AddTag(clipboard.Node, MakeUniqueName(name));
+            return true;
+        }
+
+        private void AddTag (TagNode tag, string name)
+        {
+            _container.AddTag(tag, name);
+            IsDataModified = true;
+
+            if (IsExpanded) {
+                TagDataNode node = TagDataNode.CreateFromTag(tag);
+                if (node != null)
+                    Nodes.Add(node);
+            }
+        }
+
+        private string MakeUniqueName (string name)
+        {
+            List<string> names = new List<string>(_container.TagNamesInUse);
+            if (!names.Contains(name))
+                return name;
+
+            int index = 1;
+            while (names.Contains(MakeCandidateName(name, index)))
+                index++;
+
+            return MakeCandidateName(name, index);
+        }
+
+        private string MakeCandidateName (string name, int index)
+        {
+            return name + " (Copy " + index + ")";
         }
 
         public bool IsNamedContainer
